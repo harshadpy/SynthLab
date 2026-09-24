@@ -875,69 +875,110 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   {/* ------------------------------------------------------------- */}
                   {/* STRATEGY 2: GRAPHRAG SPECIFIC DISPLAY                         */}
                   {/* ------------------------------------------------------------- */}
-                  {strat === 'GraphRAG' && (
-                    <div className="p-3 bg-[#110d22] rounded-xl border border-purple-500/30 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-semibold text-purple-300 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[16px] text-purple-400">hub</span>
-                          Knowledge Graph Traversal
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-200">
-                          Centrality: {meta.centrality_score || 0.88}
-                        </span>
-                      </div>
+                  {/* ------------------------------------------------------------- */}
+                  {/* STRATEGY 2: GRAPHRAG SPECIFIC DISPLAY                         */}
+                  {/* ------------------------------------------------------------- */}
+                  {strat === 'GraphRAG' && (() => {
+                    const telem = meta.telemetry || {};
+                    return (
+                      <div className="p-3 bg-[#110d22] rounded-xl border border-purple-500/30 space-y-3 shadow-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] text-purple-400">hub</span>
+                            NetworkX Multi-Hop Knowledge Graph
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-200">
+                            Path Relevance: {meta.centrality_score || 0.88}
+                          </span>
+                        </div>
 
-                      {/* Matched Entity Node */}
-                      <div className="p-2.5 bg-[#171030] rounded-lg border border-purple-500/20 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shadow-[0_0_8px_#c084fc] animate-ping"></span>
-                          <div>
-                            <span className="text-[10px] font-mono text-tertiary-muted uppercase">Query Entity Node:</span>
-                            <div className="text-xs font-bold text-white font-mono">
-                              {meta.matched_entity || 'Concept Node'}
+                        {/* Matched Entity Node */}
+                        <div className="p-2.5 bg-[#171030] rounded-lg border border-purple-500/20 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shadow-[0_0_8px_#c084fc] animate-ping"></span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-mono text-tertiary-muted uppercase">Query Seed Entity:</span>
+                                <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-purple-900/60 border border-purple-400/30 text-purple-200">
+                                  {meta.node_type || 'concept'}
+                                </span>
+                              </div>
+                              <div className="text-xs font-bold text-white font-mono">
+                                {meta.matched_entity || 'Entity Node'}
+                              </div>
                             </div>
                           </div>
+                          <div className="text-right font-mono text-[11px]">
+                            <span className="text-slate-400">Degree: </span>
+                            <span className="text-purple-300 font-bold">{meta.node_degree || 4}</span>
+                          </div>
                         </div>
-                        <div className="text-right font-mono text-[11px]">
-                          <span className="text-slate-400">Node Degree: </span>
-                          <span className="text-purple-300 font-bold">{meta.node_degree || 4}</span>
-                        </div>
-                      </div>
 
-                      {/* Community Neighbors */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-mono text-tertiary-muted uppercase tracking-wider">
-                          1-Hop &amp; 2-Hop Community Neighbors:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(meta.community_neighbors || ['Attention', 'Transformer', 'Self-Attention', 'Feed-Forward']).map((nbr: string, i: number) => (
-                            <span
-                              key={i}
-                              className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/50 border border-purple-500/30 text-purple-200 font-medium flex items-center gap-1"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                              {nbr}
+                        {/* GraphRAG Telemetry Strip */}
+                        {telem.nodes_traversed !== undefined && (
+                          <div className="grid grid-cols-3 gap-1.5 py-1">
+                            <div className="bg-[#181135] p-1.5 rounded-lg border border-purple-500/20 text-center">
+                              <span className="block text-[9px] font-mono text-slate-400 uppercase">Traversed</span>
+                              <span className="font-mono text-xs font-bold text-purple-300">
+                                {telem.nodes_traversed || 0} nodes
+                              </span>
+                            </div>
+                            <div className="bg-[#181135] p-1.5 rounded-lg border border-purple-500/20 text-center">
+                              <span className="block text-[9px] font-mono text-slate-400 uppercase">Max Depth</span>
+                              <span className="font-mono text-xs font-bold text-purple-300">
+                                {telem.number_of_hops || 2}-Hop Bounded
+                              </span>
+                            </div>
+                            <div className="bg-[#181135] p-1.5 rounded-lg border border-purple-500/20 text-center">
+                              <span className="block text-[9px] font-mono text-slate-400 uppercase">Subgraph</span>
+                              <span className="font-mono text-xs font-bold text-purple-300">
+                                {telem.edges_traversed || 0} edges
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Multi-Hop Grounded Edge Relations */}
+                        {meta.edge_relations && meta.edge_relations.length > 0 && (
+                          <div className="space-y-1.5 font-mono text-[11px]">
+                            <span className="text-[10px] text-tertiary-muted uppercase tracking-wider flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[13px] text-purple-400">route</span>
+                              Multi-Hop Traceable Relations:
                             </span>
-                          ))}
-                        </div>
-                      </div>
+                            <div className="space-y-1">
+                              {meta.edge_relations.map((rel: string, i: number) => (
+                                <div
+                                  key={i}
+                                  className="text-slate-200 bg-[#160f2e] px-2.5 py-1.5 rounded border border-purple-500/20 flex items-start gap-1.5 text-[10.5px] leading-relaxed"
+                                >
+                                  <span className="material-symbols-outlined text-[13px] text-purple-400 shrink-0 mt-0.5">alt_route</span>
+                                  <span className="break-all">{rel}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
-                      {/* Edge Relations */}
-                      {meta.edge_relations && meta.edge_relations.length > 0 && (
-                        <div className="space-y-1 font-mono text-[11px]">
-                          <span className="text-[10px] text-tertiary-muted uppercase">Relational Edges:</span>
-                          <div className="space-y-0.5">
-                            {meta.edge_relations.map((rel: string, i: number) => (
-                              <div key={i} className="text-slate-300 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-[12px] text-purple-400">link</span>
-                                <span>{rel}</span>
-                              </div>
+                        {/* Community Neighbors */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-mono text-tertiary-muted uppercase tracking-wider">
+                            1-Hop &amp; 2-Hop Associated Concepts:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(meta.community_neighbors || ['Attention', 'Transformer', 'Self-Attention', 'Feed-Forward']).map((nbr: string, i: number) => (
+                              <span
+                                key={i}
+                                className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950/50 border border-purple-500/30 text-purple-200 font-medium flex items-center gap-1"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+                                {nbr}
+                              </span>
                             ))}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   {/* ------------------------------------------------------------- */}
                   {/* STRATEGY 3: AGENTIC CRAG SPECIFIC DISPLAY                     */}

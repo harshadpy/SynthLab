@@ -273,4 +273,56 @@ class EvaluationService:
 
         return results
 
+    async def evaluate_graph_rag(self, corpus_id: str, query: str, expected_entities: List[str]) -> Dict[str, Any]:
+        """
+        Requirement 11: GraphRAG-specific evaluation metrics:
+        - Entity mapping: Did query entities map to the expected graph nodes?
+        - Relational retrieval: Were relevant relationships retrieved?
+        - Multi-hop path retrieval: Was the multi-hop path found?
+        - Retrieval latency and context grounding.
+        """
+        from apps.api.services.index_service import index_service
+        from apps.api.rag.graph_rag import graph_rag
+
+        t0 = time.time()
+        traversal = index_service.traverse_graph(corpus_id, query, top_k=5, max_hops=2)
+        traversal_latency = int((time.time() - t0) * 1000)
+
+        matched_nodes = traversal.get("matched_nodes", [])
+        paths = traversal.get("paths", [])
+        traversed_edges = traversal.get("traversed_edges", [])
+        retrieved_chunk_ids = traversal.get("retrieved_chunk_ids", [])
+        telemetry = traversal.get("telemetry", {})
+
+        # 1. Entity mapping accuracy
+        expected_lower = [e.lower() for e in expected_entities]
+        matched_lower = [m.lower() for m in matched_nodes]
+        mapped_count = sum(1 for e in expected_lower if any(e in m or m in e for m in matched_lower))
+        entity_mapping_accuracy = round(mapped_count / max(1, len(expected_entities)), 2)
+
+        # 2. Relational retrieval
+        semantic_edges = [e for e in traversed_edges if e.get("relation") != "co_occurs_with"]
+        has_semantic_relations = len(semantic_edges) > 0
+
+        # 3. Multi-hop path retrieval
+        has_two_hop = any(e.get("hop", 1) == 2 for e in traversed_edges)
+
+        # 4. End-to-end retrieval result
+        retrieval_res = await graph_rag.retrieve(query, corpus_id, {"top_k": 4})
+
+        return {
+            "query": query,
+            "entity_mapping_accuracy": entity_mapping_accuracy,
+            "matched_nodes": matched_nodes,
+            "expected_entities": expected_entities,
+            "semantic_edges_found": len(semantic_edges),
+            "multi_hop_path_found": has_two_hop,
+            "total_edges_traversed": len(traversed_edges),
+            "retrieved_chunks_count": len(retrieved_chunk_ids),
+            "traversal_latency_ms": traversal_latency,
+            "end_to_end_retrieval_latency_ms": retrieval_res.retrieval_latency_ms,
+            "citations_returned": len(retrieval_res.citations),
+            "telemetry": telemetry
+        }
+
 evaluation_service = EvaluationService()

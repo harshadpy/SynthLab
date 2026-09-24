@@ -8,14 +8,15 @@ from pathlib import Path
 from openai import OpenAI
 from apps.api.core.config import settings
 from apps.api.services.neo4j_service import neo4j_service
+from apps.api.services.graph_indexer import GraphIndexer
 
 class IndexService:
     def __init__(self):
         self.sparse_indices: Dict[str, Any] = {}
         self.chunk_stores: Dict[str, Dict[str, Any]] = {}
-        self.graphs: Dict[str, nx.Graph] = {}
+        self.graphs: Dict[str, Any] = {}
         self.dense_vectors: Dict[str, Dict[str, np.ndarray]] = {}
-        self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=25.0) if settings.OPENAI_API_KEY else None
+        self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=4.0) if settings.OPENAI_API_KEY else None
 
     def index_corpus(self, corpus_id: str, chunks_data: List[Dict[str, Any]], sync_neo4j: bool = True):
         if not chunks_data:
@@ -25,8 +26,6 @@ class IndexService:
         child_corpus_texts = []
         child_corpus_ids = []
 
-        g = nx.Graph()
-
         for chunk in chunks_data:
             c_id = chunk["id"]
             corpus_chunk_store[c_id] = chunk
@@ -34,10 +33,16 @@ class IndexService:
             if chunk.get("chunk_type") == "child":
                 child_corpus_texts.append(chunk["content"])
                 child_corpus_ids.append(c_id)
-                self._extract_graph_nodes(g, chunk)
 
+        # 1. Build and Persist NetworkX Knowledge Graph using GraphIndexer
+        g = GraphIndexer.build_graph(chunks_data)
         self.chunk_stores[corpus_id] = corpus_chunk_store
         self.graphs[corpus_id] = g
+
+        try:
+            GraphIndexer.save_graph(g, corpus_id, settings.INDEX_DIR)
+        except Exception as e:
+            print(f"[IndexService] Graph persistence error: {e}")
 
         # 1. Build BM25s sparse index
         if child_corpus_texts:
@@ -204,6 +209,8 @@ class IndexService:
                     pass
                 return
             except Exception as e:
+                if "429" in str(e) or "quota" in str(e) or "credit" in str(e):
+                    self.openai_client = None
                 print(f"[IndexService] OpenAI embedding error: {e}. Falling back to deterministic vectors.")
 
         for c_id, text in zip(chunk_ids, texts):
@@ -215,6 +222,12 @@ class IndexService:
         self.dense_vectors[corpus_id] = corpus_vecs
 
     def _ensure_corpus_loaded(self, corpus_id: str):
+        # 1. Check if graph can be loaded from disk cache if not in memory
+        if corpus_id not in self.graphs:
+            disk_g = GraphIndexer.load_graph(corpus_id, settings.INDEX_DIR)
+            if disk_g is not None:
+                self.graphs[corpus_id] = disk_g
+
         if corpus_id in self.chunk_stores and len(self.chunk_stores[corpus_id]) > 0:
             return
 
@@ -254,6 +267,8 @@ class IndexService:
                 q_vec = np.array(res.data[0].embedding, dtype=np.float32)
                 q_vec = q_vec / (np.linalg.norm(q_vec) + 1e-9)
             except Exception as e:
+                if "429" in str(e) or "quota" in str(e) or "credit" in str(e):
+                    self.openai_client = None
                 print(f"[IndexService] Query embedding error: {e}")
 
         if q_vec is None:
@@ -327,43 +342,65 @@ class IndexService:
         self._ensure_corpus_loaded(corpus_id)
         return self.chunk_stores.get(corpus_id, {}).get(parent_id, {})
 
+    def traverse_graph(self, corpus_id: str, query: str, top_k: int = 5, max_hops: int = 2) -> Dict[str, Any]:
+        """Performs bounded 1-hop and 2-hop traversal with full telemetry and path representations."""
+        self._ensure_corpus_loaded(corpus_id)
+        g = self.graphs.get(corpus_id)
+        if not g:
+            return {
+                "matched_nodes": [],
+                "ranked_nodes": [],
+                "traversed_edges": [],
+                "paths": [],
+                "retrieved_chunk_ids": [],
+                "telemetry": {
+                    "nodes_matched": 0,
+                    "nodes_traversed": 0,
+                    "number_of_hops": 0,
+                    "edges_traversed": 0,
+                    "subgraph_size": {"nodes": 0, "edges": 0},
+                    "retrieved_chunks": 0
+                }
+            }
+
+        return GraphIndexer.multi_hop_traversal(g, query, top_k_nodes=top_k, max_hops=max_hops)
+
     def search_graph(self, corpus_id: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         self._ensure_corpus_loaded(corpus_id)
 
-        # 1. Try querying Neo4j knowledge graph first
+        # 1. Try querying Neo4j knowledge graph first (only if it contains chunks for this corpus)
         try:
             if neo4j_service.is_available():
                 neo_results = neo4j_service.search_graph(corpus_id, query, top_k=top_k)
-                if neo_results:
+                if neo_results and any(len(r.get("chunk_ids", [])) > 0 for r in neo_results):
                     return neo_results
         except Exception as e:
             print(f"[IndexService] Neo4j query notice: {e}")
 
-        # 2. Fallback to in-memory NetworkX graph
+        # 2. NetworkX Bounded Multi-Hop Traversal via GraphIndexer
         g = self.graphs.get(corpus_id)
         if not g:
             return []
 
-        results = []
-        q_words = set(w.lower() for w in query.split() if len(w) > 2)
-        scored_nodes = []
-        for node in g.nodes():
-            node_str = str(node).lower()
-            overlap = sum(1 for w in q_words if w in node_str)
-            if overlap > 0 or node_str in query.lower():
-                deg = g.degree(node)
-                score = overlap * 10 + deg
-                scored_nodes.append((node, score))
+        traversal = GraphIndexer.multi_hop_traversal(g, query, top_k_nodes=top_k, max_hops=2)
+        ranked = traversal.get("ranked_nodes", [])
+        paths = traversal.get("paths", [])
+        telemetry = traversal.get("telemetry", {})
 
-        scored_nodes.sort(key=lambda x: x[1], reverse=True)
-        for node, _ in scored_nodes[:top_k]:
-            neighbors = list(g.neighbors(node))
-            chunks = g.nodes[node].get("chunk_ids", [])
+        results = []
+        for r in ranked[:top_k]:
+            ent = r["entity"]
+            neighbors = list(g.successors(ent)) + list(g.predecessors(ent)) if hasattr(g, "successors") else list(g.neighbors(ent))
             results.append({
-                "entity": str(node),
+                "entity": ent,
+                "type": r.get("type", "concept"),
                 "neighbors": [str(n) for n in neighbors[:8]],
-                "chunk_ids": chunks[:6],
-                "degree": g.degree(node)
+                "chunk_ids": r.get("chunk_ids", [])[:8],
+                "degree": r.get("degree", g.degree(ent)),
+                "path_score": r.get("score", 1.0),
+                "hop": r.get("hop", 0),
+                "paths": [p for p in paths if p["source"] == ent or p["target"] == ent],
+                "telemetry": telemetry
             })
 
         return results
@@ -388,7 +425,9 @@ class IndexService:
         clusters = []
         try:
             from networkx.algorithms import community
-            comms = list(community.greedy_modularity_communities(g))
+            # Convert to undirected graph for community detection if directed
+            undir_g = g.to_undirected() if hasattr(g, "to_undirected") else g
+            comms = list(community.greedy_modularity_communities(undir_g))
             for i, comm in enumerate(comms[:limit]):
                 nodes_list = list(comm)[:6]
                 chunks_set = set()
@@ -404,12 +443,12 @@ class IndexService:
             # Simple degree-based fallback
             top_nodes = sorted(g.nodes(), key=lambda n: g.degree(n), reverse=True)[:limit]
             for n in top_nodes:
-                nbrs = list(g.neighbors(n))[:5]
+                nbrs = list(g.successors(n)) if hasattr(g, "successors") else list(g.neighbors(n))
                 c_ids = g.nodes[n].get("chunk_ids", [])[:4]
                 clusters.append({
                     "theme": f"Cluster: {n}",
                     "arxiv_id": "NetworkX",
-                    "entities": [str(n)] + [str(nb) for nb in nbrs],
+                    "entities": [str(n)] + [str(nb) for nb in nbrs[:5]],
                     "chunk_ids": c_ids
                 })
         return clusters
@@ -419,5 +458,14 @@ class IndexService:
         self.chunk_stores.pop(corpus_id, None)
         self.graphs.pop(corpus_id, None)
         self.dense_vectors.pop(corpus_id, None)
+
+        # Remove serialized graph & cache files from disk
+        for ext in ["_graph.json", "_graph.pkl", "_dense.npz"]:
+            fpath = settings.INDEX_DIR / f"{corpus_id}{ext}"
+            if fpath.exists():
+                try:
+                    fpath.unlink()
+                except Exception as e:
+                    print(f"[IndexService] Could not remove index file {fpath}: {e}")
 
 index_service = IndexService()

@@ -9,6 +9,7 @@ from apps.api.services.neo4j_service import neo4j_service
 from apps.api.rag.base import build_citation, generate_research_answer, is_general_query, build_general_query_answer
 from apps.api.rag.common import CitationVerifier
 from apps.api.core.langsmith import langsmith_tracker
+from apps.api.services.graph_indexer import EntityExtractor, EntityNormalizer
 
 class GraphRAGState(TypedDict):
     query: str
@@ -16,6 +17,7 @@ class GraphRAGState(TypedDict):
     config: Dict[str, Any]
     query_entities: List[str]
     graph_results: List[Dict[str, Any]]
+    traversal_data: Dict[str, Any]
     community_clusters: List[Dict[str, Any]]
     dense_dict: Dict[str, float]
     sparse_dict: Dict[str, float]
@@ -50,16 +52,23 @@ class GraphRAGPipeline:
 
     def _node_extract_query_entities(self, state: GraphRAGState) -> Dict[str, Any]:
         query = state["query"]
-        stopwords = {"what", "which", "how", "does", "compare", "versus", "with", "between", "paper", "papers", "model", "models"}
+        extracted = EntityExtractor.extract_entities(query)
+        entities = [e["canonical_name"] for e in extracted]
 
-        # Extract capitalized entities and technical terms from query
+        # Also fallback to technical token extraction
+        stopwords = {"what", "which", "how", "does", "compare", "versus", "with", "between", "paper", "papers", "model", "models"}
         raw_terms = re.findall(r"\b[A-Za-z0-9_-]{3,}\b", query)
-        entities = [t for t in raw_terms if t.lower() not in stopwords]
+        for t in raw_terms:
+            if t.lower() not in stopwords:
+                norm = EntityNormalizer.normalize(t)
+                if norm and norm[0] not in entities:
+                    entities.append(norm[0])
 
         steps = list(state.get("intermediate_steps", []))
         steps.append({
             "step": "LangGraph: Entity Extraction & Query Disambiguation",
-            "extracted_terms": entities[:6]
+            "extracted_entities": entities[:6],
+            "entity_count": len(entities)
         })
         return {
             "query_entities": entities,
@@ -77,10 +86,13 @@ class GraphRAGPipeline:
 
         is_neo = False
         graph_results = []
+        traversal_data = {}
+
         try:
             if neo4j_service.is_available():
-                graph_results = neo4j_service.search_graph(corpus_id, query, top_k=top_k)
-                if graph_results:
+                neo_results = neo4j_service.search_graph(corpus_id, query, top_k=top_k)
+                if neo_results and any(len(r.get("chunk_ids", [])) > 0 for r in neo_results):
+                    graph_results = neo_results
                     is_neo = True
                     steps.append({
                         "step": "LangGraph: Neo4j Bounded Multi-Hop Traversal (Cypher)",
@@ -88,17 +100,24 @@ class GraphRAGPipeline:
                         "matched_paths": len(graph_results),
                         "status": "connected"
                     })
-                if is_thematic:
+                if is_thematic and is_neo:
                     community_clusters = neo4j_service.get_community_clusters(corpus_id, limit=3)
         except Exception as e:
             print(f"[GraphRAG] Neo4j traversal notice: {e}")
 
         if not is_neo:
+            traversal_data = index_service.traverse_graph(corpus_id, query, top_k=top_k, max_hops=2)
             graph_results = index_service.search_graph(corpus_id, query, top_k=top_k)
+            telem = traversal_data.get("telemetry", {})
             steps.append({
-                "step": "LangGraph: Knowledge Graph Traversal (NetworkX In-Memory Subgraph)",
-                "engine": "NetworkX In-Memory Subgraph",
-                "matched_paths": len(graph_results),
+                "step": "LangGraph: Bounded Multi-Hop Knowledge Graph Traversal (NetworkX)",
+                "engine": "NetworkX MultiDiGraph Index",
+                "nodes_matched": telem.get("nodes_matched", len(traversal_data.get("matched_nodes", []))),
+                "nodes_traversed": telem.get("nodes_traversed", 0),
+                "edges_traversed": telem.get("edges_traversed", 0),
+                "hops": telem.get("number_of_hops", 2),
+                "subgraph_size": telem.get("subgraph_size", {"nodes": 0, "edges": 0}),
+                "retrieved_chunks": telem.get("retrieved_chunks", 0),
                 "neo4j_status": "standby_or_offline"
             })
             if is_thematic:
@@ -106,6 +125,7 @@ class GraphRAGPipeline:
 
         return {
             "graph_results": graph_results,
+            "traversal_data": traversal_data,
             "community_clusters": community_clusters,
             "intermediate_steps": steps
         }
@@ -128,10 +148,22 @@ class GraphRAGPipeline:
         query = state["query"]
         top_k = state["config"].get("top_k", 6)
         graph_results = state.get("graph_results", [])
+        traversal_data = state.get("traversal_data", {})
         community_clusters = state.get("community_clusters", [])
         dense_dict = state.get("dense_dict", {})
         sparse_dict = state.get("sparse_dict", {})
         steps = list(state.get("intermediate_steps", []))
+
+        all_paths = traversal_data.get("paths", [])
+        all_edges = traversal_data.get("traversed_edges", [])
+        telem = traversal_data.get("telemetry", {
+            "nodes_matched": len(graph_results),
+            "nodes_traversed": len(graph_results),
+            "number_of_hops": 2,
+            "edges_traversed": len(all_edges),
+            "subgraph_size": {"nodes": len(graph_results), "edges": len(all_edges)},
+            "retrieved_chunks": 0
+        })
 
         citations: List[Citation] = []
         seen_chunks: Set[str] = set()
@@ -144,6 +176,7 @@ class GraphRAGPipeline:
             chunk_ids = gr.get("chunk_ids", [])
             deg = gr.get("degree", len(neighbors))
             path_score = gr.get("path_score", round(min(1.0, 0.65 + (deg * 0.05)), 2))
+            node_paths = [p for p in all_paths if p.get("source") == ent or p.get("target") == ent]
 
             steps.append({
                 "entity": ent,
@@ -152,18 +185,16 @@ class GraphRAGPipeline:
                 "linked_evidence_chunks": len(chunk_ids)
             })
 
-            meta = {
-                "strategy": "GraphRAG",
-                "technique": f"LangGraph StateGraph: Neo4j/NetworkX Typed Entity & Relational Traversal ({node_type})",
-                "orchestrator": "LangGraph",
-                "matched_entity": ent,
-                "node_type": node_type,
-                "node_degree": deg,
-                "community_neighbors": neighbors[:8],
-                "subgraph_depth": "Bounded 2-Hop Traversal with Path Scoring",
-                "centrality_score": path_score,
-                "edge_relations": [f"{ent} <-> {nbr}" for nbr in neighbors[:5]]
-            }
+            # Format relational edge strings: e.g. "Transformer ──uses──> Self-Attention"
+            edge_relations = []
+            if node_paths:
+                for p in node_paths[:6]:
+                    edge_relations.append(f"{p['source']} ──{p['relation']}──> {p['target']}")
+            elif gr.get("paths"):
+                for p in gr["paths"][:6]:
+                    edge_relations.append(f"{p['source']} ──{p['relation']}──> {p['target']}")
+            else:
+                edge_relations = [f"{ent} ──relates_to──> {nbr}" for nbr in neighbors[:5]]
 
             for cid in chunk_ids:
                 if cid not in seen_chunks:
@@ -180,6 +211,28 @@ class GraphRAGPipeline:
                             overlap = len(q_words.intersection(c_words))
                             real_bm25 = round(overlap * 2.5, 2)
                         real_reranker = round(0.5 * (float(real_sim) + min(1.0, real_bm25 / 25.0)), 3)
+
+                        sec_label = chunk.get("section_name", "Content")
+                        pg_num = chunk.get("page_number", 1)
+                        grounded_relations = [f"{r} [{sec_label}, p. {pg_num}]" for r in edge_relations[:4]]
+
+                        meta = {
+                            "strategy": "GraphRAG",
+                            "technique": f"LangGraph StateGraph: NetworkX Bounded Multi-Hop Traversal ({node_type})",
+                            "orchestrator": "LangGraph",
+                            "matched_entity": ent,
+                            "node_type": node_type,
+                            "node_degree": deg,
+                            "community_neighbors": neighbors[:8],
+                            "subgraph_depth": "Bounded 2-Hop Traversal with Path Scoring",
+                            "centrality_score": path_score,
+                            "edge_relations": grounded_relations if grounded_relations else edge_relations[:4],
+                            "graph_paths": node_paths[:4],
+                            "telemetry": {
+                                **telem,
+                                "final_evidence_used": len(citations) + 1
+                            }
+                        }
 
                         c = build_citation(
                             chunk=chunk,
@@ -213,7 +266,8 @@ class GraphRAGPipeline:
                                 strategy_metadata={
                                     "strategy": "GraphRAG",
                                     "technique": "Community Cluster Summary Evidence",
-                                    "cluster_theme": comm.get("theme", "Community Cluster")
+                                    "cluster_theme": comm.get("theme", "Community Cluster"),
+                                    "telemetry": telem
                                 }
                             )
                             citations.append(c)
@@ -231,7 +285,11 @@ class GraphRAGPipeline:
                         similarity=sim,
                         bm25_score=10.0,
                         reranker=round(sim, 3),
-                        strategy_metadata={"strategy": "GraphRAG", "note": "Dense fallback due to graph sparsity"}
+                        strategy_metadata={
+                            "strategy": "GraphRAG",
+                            "note": "Dense fallback due to graph sparsity",
+                            "telemetry": telem
+                        }
                     )
                     citations.append(c)
 
@@ -240,14 +298,28 @@ class GraphRAGPipeline:
     def _node_generate(self, state: GraphRAGState) -> Dict[str, Any]:
         query = state["query"]
         citations = state.get("citations", [])
+        traversal_data = state.get("traversal_data", {})
         model_name = state["config"].get("model", "gpt-4o")
+
+        # Format graph relationships into synthesis prompt context
+        paths = traversal_data.get("paths", [])
+        graph_context = ""
+        if paths:
+            path_strs = [f"- {p['representation']} (Supported in §{p.get('section_name', 'Section')}, p. {p.get('page_number', 1)})" for p in paths[:8]]
+            graph_context = "\nIdentified Graph Knowledge Relationships:\n" + "\n".join(path_strs) + "\n"
+
+        prompt_extra = (
+            "You are executing the LangGraph GraphRAG pipeline (Typed Knowledge Graph & Bounded Multi-Hop Traversal).\n"
+            + graph_context
+            + "Synthesize answers emphasizing verifiable relational links between extracted methods, datasets, architectures, and concepts."
+        )
 
         answer_text, usage = generate_research_answer(
             query=query,
             citations=citations,
             strategy_name=self.name,
             model_name=model_name,
-            system_prompt_extra="You are executing the LangGraph GraphRAG pipeline (Typed Knowledge Graph & Bounded Multi-Hop Traversal)."
+            system_prompt_extra=prompt_extra
         )
 
         # Verify inline citations against evidence passages
@@ -276,6 +348,7 @@ class GraphRAGPipeline:
             "config": config,
             "query_entities": [],
             "graph_results": [],
+            "traversal_data": {},
             "community_clusters": [],
             "dense_dict": {},
             "sparse_dict": {},
@@ -354,6 +427,7 @@ class GraphRAGPipeline:
             "config": config,
             "query_entities": [],
             "graph_results": [],
+            "traversal_data": {},
             "community_clusters": [],
             "dense_dict": {},
             "sparse_dict": {},
