@@ -10,6 +10,20 @@ from apps.api.core.config import settings
 from apps.api.services.neo4j_service import neo4j_service
 from apps.api.services.graph_indexer import GraphIndexer
 
+def is_reference_chunk(chunk: Dict[str, Any]) -> bool:
+    if not chunk:
+        return False
+    sec_name = (chunk.get("section_name") or "").lower()
+    content = (chunk.get("content") or "").strip().lower()
+    if any(k in sec_name for k in ("reference", "bibliography", "acknowledgement", "acknowledgments", "literature cited")):
+        return True
+    if content.startswith("[references]") or content.startswith("references\n") or content.startswith("bibliography\n"):
+        return True
+    if len(re.findall(r"\[\d+\]\s+[A-Z]", chunk.get("content", ""))) >= 2:
+        return True
+    return False
+
+
 class IndexService:
     def __init__(self):
         self.sparse_indices: Dict[str, Any] = {}
@@ -299,9 +313,8 @@ class IndexService:
         for cid, doc_vec in vecs.items():
             sim = float(np.dot(q_vec, doc_vec))
             chunk = self.chunk_stores.get(corpus_id, {}).get(cid, {})
-            sec_name = (chunk.get("section_name") or "").lower()
-            if not is_ref_query and any(k in sec_name for k in ("reference", "bibliography", "acknowledgement", "acknowledgments")):
-                sim -= 0.30  # Demote reference list chunks
+            if not is_ref_query and is_reference_chunk(chunk):
+                sim -= 0.60  # Heavily demote reference list chunks
             scores.append((cid, float(sim)))
 
         scores.sort(key=lambda x: x[1], reverse=True)
@@ -321,10 +334,9 @@ class IndexService:
             if len(results) > 0:
                 for cid, score in zip(results[0], scores[0]):
                     chunk = self.chunk_stores.get(corpus_id, {}).get(str(cid), {})
-                    sec_name = (chunk.get("section_name") or "").lower()
                     penalized = float(score)
-                    if not is_ref_query and any(k in sec_name for k in ("reference", "bibliography", "acknowledgement", "acknowledgments")):
-                        penalized = max(0.0, penalized - 8.0)
+                    if not is_ref_query and is_reference_chunk(chunk):
+                        penalized = max(0.0, penalized - 18.0)
                     output.append((str(cid), penalized))
                 output.sort(key=lambda x: x[1], reverse=True)
             return output[:top_k]

@@ -150,7 +150,7 @@ class EvaluationService:
         user_content = f"Question: {question}\n\nContext Passages:\n{context_text}\n\nGenerated Answer:\n{answer}"
 
         try:
-            client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=20.0)
+            client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=2.0, max_retries=0)
             resp = client.chat.completions.create(
                 model=settings.DEFAULT_CHAT_MODEL,
                 messages=[

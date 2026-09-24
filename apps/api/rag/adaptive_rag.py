@@ -1,5 +1,6 @@
 import time
 import json
+import re
 from typing import Dict, Any, List, cast
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
@@ -209,6 +210,13 @@ class AdaptiveRAGPipeline:
 
         ans = await pipeline.generate(query, retrieval_result, config)
         ans.strategy = self.name
+        if "#### " in ans.answer:
+            adaptive_banner = (
+                f"#### Adaptive Architecture Analysis (Dynamic Query Routing & Decomposition)\n"
+                f"Query complexity classified as **{classification['difficulty'].upper()}** (confidence: {int(classification['confidence']*100)}%). "
+                f"The adaptive dispatcher dynamically routed retrieval to the **{target} RAG** pipeline to maximize relational reasoning and evidence grounding across {len(ans.citations)} citations."
+            )
+            ans.answer = re.sub(r"#### [^\n]+Architecture Analysis[^\n]*\n[\s\S]*$", adaptive_banner, ans.answer)
         return ans
 
     async def run(self, query: str, corpus_id: str, config: Dict[str, Any]) -> AnswerResult:
@@ -262,8 +270,20 @@ class AdaptiveRAGPipeline:
             extra={"metadata": {"strategy": self.name, "delegated_strategy": target, "orchestrator": "LangGraph"}}
         )
 
+        # Format Adaptive architecture footer
+        adaptive_banner = (
+            f"#### Adaptive Architecture Analysis (Dynamic Query Routing & Decomposition)\n"
+            f"Query complexity classified as **{state['difficulty'].upper()}** (confidence: {int(state['confidence']*100)}%). "
+            f"The adaptive dispatcher dynamically routed retrieval to the **{target} RAG** pipeline to maximize relational reasoning and evidence grounding across {len(cits)} citations."
+        )
+        ans_text = sub_ans.answer
+        if "#### " in ans_text:
+            ans_text = re.sub(r"#### [^\n]+Architecture Analysis[^\n]*\n[\s\S]*$", adaptive_banner, ans_text)
+        else:
+            ans_text += f"\n\n---\n{adaptive_banner}"
+
         return AnswerResult(
-            answer=sub_ans.answer,
+            answer=ans_text,
             citations=cits,
             strategy=self.name,
             model=model_name,

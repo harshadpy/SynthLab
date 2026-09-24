@@ -125,7 +125,7 @@ class AgenticRAGPipeline:
             s_score = float(sparse_scores.get(cid, 0.0))
 
             # Calibrated grading
-            rel_score = min(1.0, d_score * 0.6 + min(0.4, match_count * 0.1))
+            rel_score = max(0.0, min(1.0, d_score * 0.6 + min(0.4, match_count * 0.1)))
             is_relevant = rel_score >= 0.45 or rank <= 3
 
             grade = EvidenceGrade(

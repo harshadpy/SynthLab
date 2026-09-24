@@ -58,6 +58,19 @@ class PipelineTelemetry(BaseModel):
     rerank_performed: bool = False
     trace_id: Optional[str] = None
 
+def is_reference_chunk(chunk: Dict[str, Any]) -> bool:
+    if not chunk:
+        return False
+    sec_name = (chunk.get("section_name") or "").lower()
+    content = (chunk.get("content") or "").strip().lower()
+    if any(k in sec_name for k in ("reference", "bibliography", "acknowledgement", "acknowledgments", "literature cited")):
+        return True
+    if content.startswith("[references]") or content.startswith("references\n") or content.startswith("bibliography\n"):
+        return True
+    if len(re.findall(r"\[\d+\]\s+[A-Z]", chunk.get("content", ""))) >= 2:
+        return True
+    return False
+
 class LocalCrossEncoderReranker:
     """
     Pluggable, local-first reranker abstraction.
@@ -68,7 +81,7 @@ class LocalCrossEncoderReranker:
     def __init__(self, model_name: str = "local-cross-encoder-v1"):
         self.model_name = model_name
 
-    def score_pair(self, query: str, document: str, base_dense: float = 0.7, base_sparse: float = 10.0) -> float:
+    def score_pair(self, query: str, document: str, base_dense: float = 0.7, base_sparse: float = 10.0, section_name: str = "") -> float:
         q_tokens = [w.lower() for w in re.findall(r"\b\w{2,}\b", query)]
         if not q_tokens:
             return round(base_dense, 3)
@@ -104,6 +117,20 @@ class LocalCrossEncoderReranker:
             0.25 * coverage_ratio +
             0.15 * phrase_bonus
         )
+
+        # Strongly demote reference lists unless the user explicitly asks for references
+        q_lower = query.lower()
+        is_ref = False
+        if any(k in section_name.lower() for k in ("reference", "bibliography", "literature cited")):
+            is_ref = True
+        elif doc_lower.startswith("[references]") or doc_lower.startswith("references\n") or doc_lower.startswith("bibliography\n"):
+            is_ref = True
+        elif len(re.findall(r"\[\d+\]\s+[A-Z]", document)) >= 2:
+            is_ref = True
+
+        if is_ref and not any(k in q_lower for k in ("reference", "bibliography", "author", "citation", "cite")):
+            final_score *= 0.15
+
         return round(float(min(0.99, max(0.05, final_score))), 3)
 
     def rerank(
@@ -121,7 +148,8 @@ class LocalCrossEncoderReranker:
             content = c.get("content", "")
             d_score = float(c.get("dense_score", 0.7))
             s_score = float(c.get("sparse_score", 10.0))
-            score = self.score_pair(query, content, base_dense=d_score, base_sparse=s_score)
+            sec = str(c.get("section_name", ""))
+            score = self.score_pair(query, content, base_dense=d_score, base_sparse=s_score, section_name=sec)
             scored.append((c, score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
