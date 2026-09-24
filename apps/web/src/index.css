@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background-color: #0B0E14;
+    color: #dee2f1;
+    font-family: 'Inter', sans-serif;
+  }
+  body {
+    overscroll-behavior: none;
+  }
+}
+
+/* Custom sleek research scrollbar */
+.custom-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: #252d3d;
+  border-radius: 9999px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: #3c4a60;
+}
+
+/* Citation chip glow pulse on hover */
+.citation-btn {
+  box-shadow: 0 0 0 1px rgba(60, 221, 199, 0.25), 0 2px 4px rgba(0,0,0,0.4);
+}
+.citation-btn:hover {
+  box-shadow: 0 0 12px rgba(60, 221, 199, 0.45), 0 0 0 1px rgba(60, 221, 199, 0.8);
+}

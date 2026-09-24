@@ -1,0 +1,13 @@
+{
+  "include": [
+    "apps"
+  ],
+  "pythonPlatform": "Windows",
+  "pythonVersion": "3.12",
+  "pythonPath": "C:\\Program Files\\Python312\\python.exe",
+  "extraPaths": [
+    "c:\\Users\\Jarvis\\Downloads\\researchsystem",
+    "C:\\Program Files\\Python312\\Lib\\site-packages",
+    "C:\\Users\\Jarvis\\AppData\\Roaming\\Python\\Python312\\site-packages"
+  ]
+}
