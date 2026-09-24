@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from apps.api.core.database import Base
@@ -19,8 +19,8 @@ class Corpus(Base):
     page_count = Column(Integer, default=0)
     chunk_count = Column(Integer, default=0)
     categories = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     papers = relationship("Paper", back_populates="corpus", cascade="all, delete-orphan")
     chunks = relationship("Chunk", back_populates="corpus", cascade="all, delete-orphan")
@@ -46,8 +46,8 @@ class Paper(Base):
     page_count = Column(Integer, default=0)
     chunk_count = Column(Integer, default=0)
     summary = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     corpus = relationship("Corpus", back_populates="papers")
     chunks = relationship("Chunk", back_populates="paper", cascade="all, delete-orphan")
@@ -68,7 +68,7 @@ class Chunk(Base):
     parent_chunk_id = Column(String, nullable=True)  # For hierarchical RAG parent resolution
     chunk_type = Column(String(50), default="child")  # child, parent, summary
     text_hash = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     corpus = relationship("Corpus", back_populates="chunks")
     paper = relationship("Paper", back_populates="chunks")

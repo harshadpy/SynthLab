@@ -92,4 +92,10 @@ export interface MetricSummary {
   tokens: number;
   estimated_cost: string;
   questions_evaluated: number;
+  // Extended IR metrics
+  precision_at_k?: number;
+  mrr?: number;
+  ndcg?: number;
+  hit_rate?: number;
+  citation_correctness?: number;
 }

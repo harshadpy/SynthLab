@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from apps.api.core.database import Base
@@ -13,8 +13,8 @@ class Conversation(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     corpus_id = Column(String, ForeignKey("corpora.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(255), default="New Research Chat")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     corpus = relationship("Corpus", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
@@ -28,7 +28,7 @@ class Message(Base):
     role = Column(String(50), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     run_id = Column(String, ForeignKey("rag_runs.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     conversation = relationship("Conversation", back_populates="messages")
     run = relationship("RAGRun", back_populates="message", uselist=False)
@@ -50,7 +50,7 @@ class RAGRun(Base):
     intermediate_steps = Column(JSON, default=list)  # for Agentic / Adaptive routing steps
     trace_id = Column(String(255), nullable=True)  # LangSmith trace ID
     config = Column(JSON, default=dict)  # top_k, reranker, etc.
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     corpus = relationship("Corpus", back_populates="runs")
     message = relationship("Message", back_populates="run")
@@ -64,6 +64,6 @@ class Feedback(Base):
     run_id = Column(String, ForeignKey("rag_runs.id", ondelete="CASCADE"), nullable=False)
     rating = Column(String(50), nullable=False)  # helpful, not_helpful, correct, incorrect, missing_evidence
     comment = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     run = relationship("RAGRun", back_populates="feedback")

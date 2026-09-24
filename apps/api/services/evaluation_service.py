@@ -150,9 +150,10 @@ class EvaluationService:
         user_content = f"Question: {question}\n\nContext Passages:\n{context_text}\n\nGenerated Answer:\n{answer}"
 
         try:
-            client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=2.0, max_retries=0)
+            # gpt-4o-mini: sufficient for JSON scoring, 16x cheaper than luna
+            client = OpenAI(api_key=settings.OPENAI_API_KEY, timeout=8.0, max_retries=1)
             resp = client.chat.completions.create(
-                model=settings.DEFAULT_CHAT_MODEL,
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": eval_prompt},
                     {"role": "user", "content": user_content}

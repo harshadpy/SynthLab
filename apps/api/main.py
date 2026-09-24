@@ -1,6 +1,18 @@
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
+# ── Suppress repetitive health-check / model-probe access logs ───────────────
+class _SuppressPollingFilter(logging.Filter):
+    _MUTED = ("/health", "/v1/models")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(path in msg for path in self._MUTED)
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressPollingFilter())
+# ─────────────────────────────────────────────────────────────────────────────
 
 from apps.api.core.config import settings
 from apps.api.core.database import init_db, AsyncSessionLocal
@@ -205,3 +217,18 @@ app.include_router(settings_router.router, prefix=settings.API_V1_STR)
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": settings.VERSION}
+
+
+# OpenAI-compatible stub — silences IDE/tooling probes that hit /v1/models
+@app.get("/v1/models")
+async def list_models():
+    """Minimal OpenAI-compatible model list so external tools don't 404-spam logs."""
+    import os
+    default_model = os.getenv("DEFAULT_CHAT_MODEL", "gpt-4o")
+    return {
+        "object": "list",
+        "data": [
+            {"id": "gpt-4o", "object": "model", "owned_by": "synthlabs"},
+            {"id": default_model, "object": "model", "owned_by": "synthlabs"},
+        ],
+    }

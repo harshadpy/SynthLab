@@ -225,22 +225,24 @@ export const api = {
 
   async runEvaluation(corpusId: string, forceRerun: boolean = false): Promise<Record<string, MetricSummary>> {
     try {
-      if (!forceRerun) {
-        const latestRes = await fetch(`${API_BASE}/evaluation/latest?corpus_id=${corpusId}`);
-        if (latestRes.ok) {
-          const latestData = await latestRes.json();
-          if (latestData && latestData.results && Object.keys(latestData.results).length > 0) {
-            return latestData.results;
-          }
+      // Always try to fetch a cached result first — this is instant
+      const latestRes = await fetch(`${API_BASE}/evaluation/latest?corpus_id=${corpusId}`);
+      if (latestRes.ok) {
+        const latestData = await latestRes.json();
+        if (latestData && latestData.results && Object.keys(latestData.results).length > 0) {
+          return latestData.results;
         }
       }
 
-      const res = await fetch(`${API_BASE}/evaluation/experiments?corpus_id=${corpusId}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.results;
+      // Only trigger the expensive benchmark when the user explicitly clicks "Re-run"
+      if (forceRerun) {
+        const res = await fetch(`${API_BASE}/evaluation/experiments?corpus_id=${corpusId}`, {
+          method: 'POST'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data.results;
+        }
       }
     } catch (e) {
       console.warn('API error running evaluation:', e);

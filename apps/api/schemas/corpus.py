@@ -1,6 +1,6 @@
 from typing import List, Optional, Any, Dict
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class CorpusCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -13,6 +13,8 @@ class CorpusUpdateRequest(BaseModel):
     description: Optional[str] = None
 
 class PaperResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     corpus_id: str
     arxiv_id: str
@@ -28,10 +30,9 @@ class PaperResponse(BaseModel):
     chunk_count: int = 0
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class CorpusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     description: Optional[str] = None
@@ -45,5 +46,3 @@ class CorpusResponse(BaseModel):
     updated_at: datetime
     papers: List[PaperResponse] = []
 
-    class Config:
-        from_attributes = True

@@ -17,6 +17,7 @@
 <br/>
 
 [Key Capabilities](#-key-capabilities) •
+[Screenshots](#-screenshots--ui-tour) •
 [5 RAG Architectures](#-the-5-rag-architectures-deep-dive) •
 [Interactive 5-Step Workflow](#-interactive-5-step-workflow) •
 [System Architecture](#-system-architecture) •
@@ -26,12 +27,20 @@
 
 </div>
 
+<br/>
+
+<div align="center">
+  <img src="docs/assets/screenshots/01-hero-workspace.png" alt="SynthLab 3-Pane Research Workspace Preview" width="100%" />
+  <p><em>3-Pane Research Workspace: Corpus Explorer (left), 5-Way Architecture Chat (center), and Evidence Inspector with Attention U-Curve (right).</em></p>
+</div>
+
 ---
 
 ## 📑 Table of Contents
 
 - [Overview](#-overview)
 - [Key Capabilities](#-key-capabilities)
+- [Screenshots & UI Tour](#-screenshots--ui-tour)
 - [System Architecture](#-system-architecture)
 - [The 5 RAG Architectures: Deep Dive](#-the-5-rag-architectures-deep-dive)
   - [1. Hybrid RAG (Dense + BM25s + RRF)](#1-hybrid-rag-dense--bm25s--reciprocal-rank-fusion)
@@ -89,6 +98,33 @@ Most "Chat with a PDF" implementations are thin wrappers around a fixed vector s
   - Strict grounding badge: `Grounding: Faithful & Cited | Retrieval: <Strategy>`.
 - **Live LangSmith Telemetry**: Real-time trace tracking with Server-Sent Events (SSE), sub-millisecond trace counters, and a `100+` badge for high-throughput research sessions.
 - **RAG Triad Automated Evaluation**: Quantitative LLM-as-a-judge benchmarking across Faithfulness, Context Recall, Answer Relevance, Latency (p50/p95), and Token Cost.
+
+---
+
+## 📸 Screenshots & UI Tour
+
+> 📷 **Image Directory**: Save screenshots to [`docs/assets/screenshots/`](docs/assets/screenshots/) with the filenames below.
+
+<div align="center">
+
+### 🧪 3-Pane Research Workspace & Architecture Engine
+<img src="docs/assets/screenshots/01-hero-workspace.png" alt="SynthLab Research Workspace" width="100%" />
+
+<br/><br/>
+
+| 🔍 Step 1: Discover & Ingest | ⚖️ Step 3: 5-Way Architecture Comparison |
+| :---: | :---: |
+| <img src="docs/assets/screenshots/02-discover-papers.png" alt="Discover and Ingest" width="100%" /><br/>*arXiv discovery with query tags & multi-paper basket* | <img src="docs/assets/screenshots/03-architecture-comparison.png" alt="5-Way Architecture Comparison" width="100%" /><br/>*Simultaneous query broadcast across 5 RAG architectures* |
+
+| 📊 Step 4: Automated Evaluation Suite | 💡 Step 5: Thematic Insights & Synthesis |
+| :---: | :---: |
+| <img src="docs/assets/screenshots/04-evaluation-suite.png" alt="Evaluation Suite" width="100%" /><br/>*RAG Triad metrics (Faithfulness, Relevance, Recall)* | <img src="docs/assets/screenshots/05-thematic-insights.png" alt="Thematic Insights" width="100%" /><br/>*Cross-corpus concept matrix, methods & timeline* |
+
+| 🎯 Evidence Inspector & PDF Grounding | 🤖 Agentic CRAG Self-Reflection Trace |
+| :---: | :---: |
+| <img src="docs/assets/screenshots/06-evidence-inspector.png" alt="Evidence Inspector" width="100%" /><br/>*Attention U-Curve, chunk scores & direct PDF anchor* | <img src="docs/assets/screenshots/07-agentic-trace.png" alt="Agentic CRAG Trace" width="100%" /><br/>*LangGraph query rewrite loops & confidence scoring* |
+
+</div>
 
 ---
 
@@ -329,11 +365,21 @@ flowchart LR
 ```
 
 ### Step 1: Discover & Ingest (`DiscoverView.tsx`)
+
+<p align="center">
+  <img src="docs/assets/screenshots/02-discover-papers.png" alt="Step 1: Discover & Ingest" width="95%" />
+</p>
+
 - Search arXiv using natural language queries, topic tags (`cs.AI`, `cs.CL`, `stat.ML`), and publication date filters.
 - Real-time **Trending Papers sidebar** populated with curated high-impact literature.
 - Multi-paper selection basket with one-click **"Ingest & Launch Workspace"** triggering background asynchronous ingestion.
 
 ### Step 2: Research Workspace & Evidence Inspector (`WorkspaceView.tsx`)
+
+<p align="center">
+  <img src="docs/assets/screenshots/01-hero-workspace.png" alt="Step 2: Research Workspace & Evidence Inspector" width="95%" />
+</p>
+
 - **3-Pane Resizable Layout**:
   - **Left**: Corpus paper navigator with page counts, download status, and abstract viewer.
   - **Center**: Chat interface with tabs for each of the 5 RAG architectures. Conversational context is strictly isolated per architecture.
@@ -341,11 +387,21 @@ flowchart LR
 - Real-time Server-Sent Events (SSE) token streaming.
 
 ### Step 3: 5-Way Architecture Comparison (`ArchitectureComparisonView.tsx`)
+
+<p align="center">
+  <img src="docs/assets/screenshots/03-architecture-comparison.png" alt="Step 3: 5-Way Architecture Comparison" width="95%" />
+</p>
+
 - Enter a single research query and broadcast it across all 5 RAG architectures simultaneously.
 - View answers, retrieved chunk counts, end-to-end latencies, and token costs in a side-by-side 5-column comparative matrix.
 - Highlight diffs in evidence attribution and depth of technical reasoning.
 
 ### Step 4: Automated Evaluation Suite (`EvaluationView.tsx`)
+
+<p align="center">
+  <img src="docs/assets/screenshots/04-evaluation-suite.png" alt="Step 4: Automated Evaluation Suite" width="95%" />
+</p>
+
 - Executes automated test batteries across all 5 architectures using identical question sets.
 - Calculates and visualizes the **RAG Triad**:
   - **Faithfulness**: Percentage of generated statements directly supported by retrieved chunks.
@@ -354,6 +410,11 @@ flowchart LR
 - Interactive radar charts, latency distribution histograms, and cost-per-query breakdown.
 
 ### Step 5: Thematic Insights & Cross-Paper Synthesis (`InsightsView.tsx`)
+
+<p align="center">
+  <img src="docs/assets/screenshots/05-thematic-insights.png" alt="Step 5: Thematic Insights & Cross-Paper Synthesis" width="95%" />
+</p>
+
 - Automated cross-corpus synthesis aggregating concepts across all ingested papers:
   - **Theme Matrix**: High-level problem domains and research paradigms.
   - **Methodology Comparison**: Table comparing algorithms, empirical baselines, and reported metrics.

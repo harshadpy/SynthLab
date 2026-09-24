@@ -238,8 +238,14 @@ class AgenticRAGPipeline:
 
     def _node_generate(self, state: AgenticState) -> Dict[str, Any]:
         query = state["original_query"]
-        citations = state.get("citations", [])
+        raw_citations = state.get("citations", [])
         model_name = state["config"].get("model", "gpt-4o")
+
+        # LangGraph may serialize Citation objects to dicts between nodes — coerce back
+        citations: List[Citation] = [
+            Citation(**c) if isinstance(c, dict) else c
+            for c in raw_citations
+        ]
 
         answer_text, usage = generate_research_answer(
             query=query,
@@ -395,7 +401,13 @@ class AgenticRAGPipeline:
         # Execute full compiled LangGraph workflow
         final_state = self.workflow.invoke(initial_state)
         total_latency = int((time.time() - start_time) * 1000)
-        cits = final_state.get("citations", [])
+
+        # LangGraph may have serialized Citation objects to dicts — coerce back
+        raw_cits = final_state.get("citations", [])
+        cits: List[Citation] = [
+            Citation(**c) if isinstance(c, dict) else c
+            for c in raw_cits
+        ]
         model_name = config.get("model", "gpt-4o")
 
         trace_id = langsmith_tracker.create_run_trace(
