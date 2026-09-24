@@ -560,8 +560,10 @@ class GraphIndexer:
             try:
                 with open(pkl_path, "rb") as f:
                     g = pickle.load(f)
-                    if isinstance(g, (nx.Graph, nx.DiGraph)):
+                    if isinstance(g, nx.DiGraph):
                         return g
+                    elif isinstance(g, nx.Graph):
+                        return nx.DiGraph(g)
             except Exception as e:
                 print(f"[GraphIndexer] Pickle load failed, trying JSON: {e}")
 
