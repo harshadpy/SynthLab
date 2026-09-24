@@ -188,10 +188,8 @@ class ArXivService:
         combined_papers: List[ArXivPaperItem] = []
 
         try:
-            done, pending = await asyncio.wait([atom_task, openalex_task], timeout=8.5)
-            for t in pending:
-                t.cancel()
-
+            # Wait for the fastest responder first (typically arXiv Atom at ~1-2s)
+            done, pending = await asyncio.wait([atom_task, openalex_task], timeout=4.5, return_when=asyncio.FIRST_COMPLETED)
             for t in done:
                 try:
                     res = t.result()
@@ -201,8 +199,25 @@ class ArXivService:
                         combined_papers.extend(res)
                 except Exception:
                     pass
+
+            # If the first task didn't yield enough papers, give remaining tasks up to 3.5s more
+            if len(combined_papers) < max_results and pending:
+                done2, pending2 = await asyncio.wait(pending, timeout=3.5)
+                for t in done2:
+                    try:
+                        res = t.result()
+                        if isinstance(res, ArXivSearchResponse) and res.papers:
+                            combined_papers.extend(res.papers)
+                        elif isinstance(res, list):
+                            combined_papers.extend(res)
+                    except Exception:
+                        pass
+                pending = pending2
+
+            for t in pending:
+                t.cancel()
         except Exception as e:
-            print(f"[ArXivService] Search timeout or error: {e}")
+            print(f"[ArXivService] Search timeout or error: {repr(e)}")
 
         # If live search returned papers, rank and cache them
         if combined_papers:
@@ -265,11 +280,15 @@ class ArXivService:
             "sort": "relevance_score:desc"
         }
 
-        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
-            resp = await client.get(self.OPENALEX_URL, params=params)
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
+                resp = await client.get(self.OPENALEX_URL, params=params)
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+        except Exception as e:
+            print(f"[ArXivService] OpenAlex search error: {repr(e)}")
+            return []
 
         papers: List[ArXivPaperItem] = []
         for item in data.get("results", []):
