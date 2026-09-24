@@ -279,34 +279,39 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({ onCorpusCreated }) =
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && doSearch(searchQuery)}
               placeholder="Search across all scientific fields (e.g. Attention, Quantum, CRISPR, or arXiv ID: 2501.12948)..."
-              className="w-full h-11 bg-surface-container-low border border-outline-variant rounded-xl pl-10 pr-28 text-sm text-white placeholder:text-tertiary-muted focus:border-primary focus:outline-none transition-all shadow-inner"
+              className="w-full h-11 bg-surface-container-low border border-outline-variant rounded-xl pl-10 pr-36 sm:pr-40 text-sm text-white placeholder:text-tertiary-muted focus:border-primary focus:outline-none transition-all shadow-inner"
             />
-            {searchQuery && (
-              <button
-                onClick={() => { setSearchQuery(''); setPapers([]); setHasSearched(false); }}
-                className="absolute right-20 text-tertiary-muted hover:text-white text-xs px-1"
-                title="Clear query"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            )}
-            <button
-              onClick={() => doSearch(searchQuery)}
-              disabled={loading || !searchQuery.trim()}
-              className="absolute right-1.5 h-8 px-4 rounded-lg bg-primary hover:bg-[#34c4b0] disabled:opacity-50 text-[#00201C] text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-            >
-              {loading ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-[#00201C] border-t-transparent rounded-full animate-spin"></span>
-                  <span>Searching...</span>
-                </>
-              ) : (
-                <>
-                  <span>Search</span>
-                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                </>
+            <div className="absolute right-1.5 flex items-center gap-1.5">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(''); setPapers([]); setHasSearched(false); }}
+                  className="p-1 rounded-md text-tertiary-muted hover:text-white hover:bg-surface-container transition-colors flex items-center justify-center"
+                  title="Clear query"
+                  aria-label="Clear query"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
               )}
-            </button>
+              <button
+                type="button"
+                onClick={() => doSearch(searchQuery)}
+                disabled={loading || !searchQuery.trim()}
+                className="h-8 px-3.5 rounded-lg bg-primary hover:bg-[#34c4b0] disabled:opacity-50 text-[#00201C] text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shrink-0"
+              >
+                {loading ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-[#00201C] border-t-transparent rounded-full animate-spin shrink-0"></span>
+                    <span>Searching...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Search</span>
+                    <span className="material-symbols-outlined text-[14px] shrink-0">arrow_forward</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Filter Chips - Show dynamically if papers exist */}
