@@ -127,44 +127,32 @@ export const DiscoverView: React.FC<DiscoverViewProps> = ({ onCorpusCreated }) =
     const trimmed = q.trim();
     if (!trimmed) return;
 
-    // Instant local match so the user sees results in 0 milliseconds
-    const qLower = trimmed.toLowerCase();
-    const localMatches = trendingPapers.filter(
-      (p) =>
-        p.title.toLowerCase().includes(qLower) ||
-        p.arxiv_id.toLowerCase().includes(qLower) ||
-        (p.abstract && p.abstract.toLowerCase().includes(qLower)) ||
-        (qLower.includes('attention') && p.arxiv_id === '1706.03762') ||
-        (qLower.includes('deepseek') && p.arxiv_id === '2501.12948') ||
-        (qLower.includes('crag') && p.arxiv_id === '2401.15884') ||
-        (qLower.includes('graph') && p.arxiv_id === '2404.16130') ||
-        (qLower.includes('middle') && p.arxiv_id === '2307.03172')
-    );
-
-    if (localMatches.length > 0) {
-      setPapers(localMatches);
-      setHasSearched(true);
-    }
-
     setLoading(true);
     setHasSearched(true);
     try {
       const results = await api.searchArXiv(trimmed, 20);
       if (results && results.length > 0) {
         setPapers(results);
-      } else if (localMatches.length > 0) {
-        setPapers(localMatches);
       } else {
-        setPapers([]);
+        // Only fallback to local trending if exact title or arXiv ID matches
+        const qLower = trimmed.toLowerCase();
+        const localMatches = trendingPapers.filter(
+          (p) =>
+            p.title.toLowerCase().includes(qLower) ||
+            p.arxiv_id.toLowerCase() === qLower
+        );
+        setPapers(localMatches);
       }
       setActiveCategory('all');
     } catch (e) {
       console.error(e);
-      if (localMatches.length > 0) {
-        setPapers(localMatches);
-      } else {
-        setPapers([]);
-      }
+      const qLower = trimmed.toLowerCase();
+      const localMatches = trendingPapers.filter(
+        (p) =>
+          p.title.toLowerCase().includes(qLower) ||
+          p.arxiv_id.toLowerCase() === qLower
+      );
+      setPapers(localMatches);
     } finally {
       setLoading(false);
     }

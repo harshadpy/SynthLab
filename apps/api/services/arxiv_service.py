@@ -181,22 +181,14 @@ class ArXivService:
                 self._search_cache[q_norm] = (now, [exact_paper])
                 return resp
 
-        # Find instant in-memory candidates matching query terms
-        local_candidates: List[ArXivPaperItem] = []
-        for pid, p in self._papers_cache.items():
-            t = p.title.lower()
-            a = (p.abstract or "").lower()
-            if q_norm in t or any(w in t for w in q_norm.split() if len(w) > 3):
-                local_candidates.append(p)
-
-        # Concurrently execute both ArXiv Atom feed and OpenAlex search with tight bounded timeouts
+        # Concurrently execute both ArXiv Atom feed and OpenAlex search with resilient timeouts
         atom_task = asyncio.create_task(self._search_arxiv_atom(clean_q, max_results, sort_by))
         openalex_task = asyncio.create_task(self._search_openalex_arxiv(clean_q, max_results))
 
-        combined_papers: List[ArXivPaperItem] = list(local_candidates)
+        combined_papers: List[ArXivPaperItem] = []
 
         try:
-            done, pending = await asyncio.wait([atom_task, openalex_task], timeout=2.5)
+            done, pending = await asyncio.wait([atom_task, openalex_task], timeout=8.5)
             for t in pending:
                 t.cancel()
 
@@ -212,15 +204,9 @@ class ArXivService:
         except Exception as e:
             print(f"[ArXivService] Search timeout or error: {e}")
 
-        # If still empty, check trending papers
-        if not combined_papers:
-            for tp in await self.get_trending(limit=20):
-                if q_norm in tp.title.lower() or tp.title.lower() in q_norm:
-                    combined_papers.append(tp)
-
+        # If live search returned papers, rank and cache them
         if combined_papers:
             ranked_papers = self._rank_papers(clean_q, combined_papers)
-            # Store in caches
             for p in ranked_papers:
                 self._papers_cache[p.arxiv_id] = p
             self._search_cache[q_norm] = (now, ranked_papers)
@@ -231,9 +217,18 @@ class ArXivService:
                 papers=ranked_papers[:max_results]
             )
 
-        # Fallback to local candidates or return empty
-        if local_candidates:
-            return ArXivSearchResponse(query=query, total_results=len(local_candidates), papers=local_candidates[:max_results])
+        # Fallback: check trending papers only if live search returned nothing and title matches
+        for tp in await self.get_trending(limit=20):
+            if q_norm in tp.title.lower() or any(term in tp.title.lower() for term in q_norm.split() if len(term) >= 4):
+                combined_papers.append(tp)
+
+        if combined_papers:
+            ranked_fallback = self._rank_papers(clean_q, combined_papers)
+            return ArXivSearchResponse(
+                query=query,
+                total_results=len(ranked_fallback),
+                papers=ranked_fallback[:max_results]
+            )
 
         return ArXivSearchResponse(query=query, total_results=0, papers=[])
 
@@ -346,19 +341,38 @@ class ArXivService:
 
     async def _search_arxiv_atom(self, query: str, max_results: int = 15, sort_by: str = "relevance") -> Optional[ArXivSearchResponse]:
         sort_criterion = "relevance" if sort_by == "relevance" else "submittedDate"
+        words = [w.strip() for w in re.split(r'\s+', query) if w.strip()]
+        if len(words) > 1 and not any(op in query for op in ["AND", "OR", "NOT", "all:", "ti:", "abs:"]):
+            search_query = " AND ".join([f'all:"{w}"' if " " in w else f"all:{w}" for w in words])
+        elif not any(query.startswith(prefix) for prefix in ["all:", "ti:", "au:", "abs:"]):
+            search_query = f"all:{query}"
+        else:
+            search_query = query
+
         params = {
-            "search_query": f"all:{query}",
+            "search_query": search_query,
             "start": 0,
             "max_results": max_results,
             "sortBy": sort_criterion,
             "sortOrder": "descending",
         }
-        headers = {"User-Agent": "ArXivRAGResearchLab/1.4 (academic researcher)"}
+        headers = {"User-Agent": "SynthLab/1.0 (academic research platform; mailto:contact@synthlab.org)"}
 
-        async with httpx.AsyncClient(timeout=4.0, headers=headers, follow_redirects=True) as client:
-            resp = await client.get(self.BASE_URL, params=params)
-            if resp.status_code == 200:
-                return self._parse_atom_feed(resp.text, query)
+        try:
+            async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                resp = await client.get(self.BASE_URL, params=params)
+                if resp.status_code == 200:
+                    parsed = self._parse_atom_feed(resp.text, query)
+                    if parsed.papers:
+                        return parsed
+                # Fallback to simple query if boolean AND was too strict
+                if search_query != f"all:{query}":
+                    fallback_params = {**params, "search_query": f"all:{query}"}
+                    resp2 = await client.get(self.BASE_URL, params=fallback_params)
+                    if resp2.status_code == 200:
+                        return self._parse_atom_feed(resp2.text, query)
+        except Exception as e:
+            print(f"[ArXivService] arXiv Atom search error: {e}")
         return None
 
     async def get_paper(self, arxiv_id: str) -> Optional[ArXivPaperItem]:
