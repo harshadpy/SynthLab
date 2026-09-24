@@ -2,7 +2,7 @@ import os
 import re
 import numpy as np
 import bm25s
-import networkx as nx
+import networkx as nx  # type: ignore
 from typing import List, Dict, Any, Tuple, Optional, cast
 from pathlib import Path
 from openai import OpenAI
@@ -151,7 +151,7 @@ class IndexService:
             return []
 
         try:
-            import networkx.algorithms.community as nx_comm
+            import networkx.algorithms.community as nx_comm  # type: ignore
             communities = list(nx_comm.greedy_modularity_communities(g))
             results = []
             for idx, comm in enumerate(communities[:limit]):
@@ -424,7 +424,7 @@ class IndexService:
 
         clusters = []
         try:
-            from networkx.algorithms import community
+            from networkx.algorithms import community  # type: ignore
             # Convert to undirected graph for community detection if directed
             undir_g = g.to_undirected() if hasattr(g, "to_undirected") else g
             comms = list(community.greedy_modularity_communities(undir_g))

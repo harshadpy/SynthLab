@@ -3,7 +3,7 @@ import json
 import pickle
 from pathlib import Path
 from typing import Dict, Any, List, Set, Tuple, Optional
-import networkx as nx
+import networkx as nx  # type: ignore
 
 # -------------------------------------------------------------------------
 # 1. Entity Normalizer: Canonical Names, Aliases, Case Normalization
