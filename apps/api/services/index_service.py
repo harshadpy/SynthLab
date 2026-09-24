@@ -3,7 +3,7 @@ import re
 import numpy as np
 import bm25s
 import networkx as nx
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, cast
 from pathlib import Path
 from openai import OpenAI
 from apps.api.core.config import settings
@@ -273,9 +273,9 @@ class IndexService:
 
         if q_vec is None:
             np.random.seed(abs(hash(query)) % (2**32))
-            q_vec = np.random.randn(1536).astype(np.float32)
-            q_vec = q_vec / (np.linalg.norm(q_vec) + 1e-9)
-        return q_vec
+            random_vec = np.random.randn(1536).astype(np.float32)
+            q_vec = random_vec / (np.linalg.norm(random_vec) + 1e-9)
+        return cast(np.ndarray, np.asarray(q_vec, dtype=np.float32))
 
     def get_chunk_similarity(self, corpus_id: str, chunk_id: str, query: str) -> float:
         self._ensure_corpus_loaded(corpus_id)
