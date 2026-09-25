@@ -181,15 +181,16 @@ class ArXivService:
                 self._search_cache[q_norm] = (now, [exact_paper])
                 return resp
 
-        # Concurrently execute both ArXiv Atom feed and OpenAlex search with resilient timeouts
+        # Concurrently execute ArXiv HTML, ArXiv Atom feed, and OpenAlex search with resilient timeouts
+        html_task = asyncio.create_task(self._search_arxiv_html(clean_q, max_results))
         atom_task = asyncio.create_task(self._search_arxiv_atom(clean_q, max_results, sort_by))
         openalex_task = asyncio.create_task(self._search_openalex_arxiv(clean_q, max_results))
 
         combined_papers: List[ArXivPaperItem] = []
 
         try:
-            # Wait for the fastest responder first (typically arXiv Atom at ~1-2s)
-            done, pending = await asyncio.wait([atom_task, openalex_task], timeout=4.5, return_when=asyncio.FIRST_COMPLETED)
+            # Wait for fastest responders (arXiv HTML or Atom typically returns in ~1-2s)
+            done, pending = await asyncio.wait([html_task, atom_task, openalex_task], timeout=4.5, return_when=asyncio.FIRST_COMPLETED)
             for t in done:
                 try:
                     res = t.result()
@@ -200,9 +201,9 @@ class ArXivService:
                 except Exception:
                     pass
 
-            # If the first task didn't yield enough papers, give remaining tasks up to 3.5s more
+            # If not enough papers yet, allow remaining tasks up to 4.0s more
             if len(combined_papers) < max_results and pending:
-                done2, pending2 = await asyncio.wait(pending, timeout=3.5)
+                done2, pending2 = await asyncio.wait(pending, timeout=4.0)
                 for t in done2:
                     try:
                         res = t.result()
@@ -281,13 +282,12 @@ class ArXivService:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=6.0, headers=headers) as client:
+            async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
                 resp = await client.get(self.OPENALEX_URL, params=params)
                 if resp.status_code != 200:
                     return []
                 data = resp.json()
-        except Exception as e:
-            print(f"[ArXivService] OpenAlex search error: {repr(e)}")
+        except Exception:
             return []
 
         papers: List[ArXivPaperItem] = []
@@ -358,11 +358,92 @@ class ArXivService:
 
         return papers
 
+    async def _search_arxiv_html(self, query: str, max_results: int = 15) -> List[ArXivPaperItem]:
+        """Search arXiv via HTML endpoint (resilient, fast, and not subject to API rate limits)."""
+        url = "https://arxiv.org/search/"
+        params = {
+            "query": query,
+            "searchtype": "all",
+            "size": min(max_results * 2, 50)
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        try:
+            from bs4 import BeautifulSoup
+            async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code != 200:
+                    return []
+                soup = BeautifulSoup(resp.text, "html.parser")
+                results = soup.find_all("li", class_="arxiv-result")
+                papers: List[ArXivPaperItem] = []
+                for el in results:
+                    id_el = el.find("a", href=re.compile(r"/abs/(\d{4}\.\d{4,5}|[a-zA-Z\-]+/\d{7})"))
+                    if not id_el:
+                        continue
+                    m = re.search(r"(\d{4}\.\d{4,5}|[a-zA-Z\-]+/\d{7})", id_el.get("href", ""))
+                    if not m:
+                        continue
+                    arxiv_id = m.group(1)
+
+                    title_el = el.find("p", class_="title")
+                    title = title_el.text.strip() if title_el else ""
+                    if title.startswith("Title:"):
+                        title = title[6:].strip()
+                    title = re.sub(r"\s+", " ", title)
+
+                    authors_el = el.find("p", class_="authors")
+                    authors = [a.text.strip() for a in authors_el.find_all("a")] if authors_el else ["ArXiv Author"]
+
+                    abs_el = el.find("span", class_="abstract-full") or el.find("span", class_="abstract-short")
+                    abstract = abs_el.text.strip() if abs_el else ""
+                    if abstract.startswith("△ Less"):
+                        abstract = abstract.replace("△ Less", "").strip()
+                    abstract = re.sub(r"\s+", " ", abstract)
+
+                    # Extract tags
+                    categories = []
+                    for tag in el.find_all("span", class_="tag"):
+                        t_text = tag.text.strip()
+                        if t_text and len(t_text) <= 12 and not any(skip in t_text.lower() for skip in ["math", "pdf", "html"]):
+                            categories.append(t_text)
+                    if not categories:
+                        categories = ["cs.AI"]
+
+                    date_el = el.find("p", class_="is-size-7")
+                    pub_date = "2024"
+                    if date_el:
+                        dm = re.search(r"Submitted\s+([0-9]{1,2}\s+[A-Za-z]+,\s+[0-9]{4})", date_el.text)
+                        if dm:
+                            pub_date = dm.group(1)
+
+                    papers.append(
+                        ArXivPaperItem(
+                            arxiv_id=arxiv_id,
+                            title=title,
+                            authors=authors[:6],
+                            abstract=abstract,
+                            categories=categories[:3],
+                            published_date=pub_date,
+                            pdf_url=f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                        )
+                    )
+                return papers
+        except Exception as e:
+            print(f"[ArXivService] arXiv HTML search error: {repr(e)}")
+            return []
+
     async def _search_arxiv_atom(self, query: str, max_results: int = 15, sort_by: str = "relevance") -> Optional[ArXivSearchResponse]:
         sort_criterion = "relevance" if sort_by == "relevance" else "submittedDate"
+        stopwords = {"and", "or", "not", "the", "in", "of", "a", "an", "for", "with", "on", "at", "to", "by", "is", "are"}
         words = [w.strip() for w in re.split(r'\s+', query) if w.strip()]
-        if len(words) > 1 and not any(op in query for op in ["AND", "OR", "NOT", "all:", "ti:", "abs:"]):
-            search_query = " AND ".join([f'all:"{w}"' if " " in w else f"all:{w}" for w in words])
+        meaningful_words = [w for w in words if w.lower() not in stopwords]
+        if not meaningful_words:
+            meaningful_words = words
+
+        if len(meaningful_words) > 1 and not any(op in query for op in ["AND", "OR", "NOT", "all:", "ti:", "abs:"]):
+            search_query = " AND ".join([f'all:"{w}"' if " " in w else f"all:{w}" for w in meaningful_words])
         elif not any(query.startswith(prefix) for prefix in ["all:", "ti:", "au:", "abs:"]):
             search_query = f"all:{query}"
         else:
@@ -382,16 +463,18 @@ class ArXivService:
                 resp = await client.get(self.BASE_URL, params=params)
                 if resp.status_code == 200:
                     parsed = self._parse_atom_feed(resp.text, query)
-                    if parsed.papers:
+                    if parsed.papers and len(parsed.papers) >= 3:
                         return parsed
-                # Fallback to simple query if boolean AND was too strict
-                if search_query != f"all:{query}":
-                    fallback_params = {**params, "search_query": f"all:{query}"}
-                    resp2 = await client.get(self.BASE_URL, params=fallback_params)
-                    if resp2.status_code == 200:
-                        return self._parse_atom_feed(resp2.text, query)
+                # Fallback to simple query without strict boolean AND if results were few or empty
+                clean_terms = " ".join(meaningful_words)
+                fallback_params = {**params, "search_query": f"all:{clean_terms}"}
+                resp2 = await client.get(self.BASE_URL, params=fallback_params)
+                if resp2.status_code == 200:
+                    parsed2 = self._parse_atom_feed(resp2.text, query)
+                    if parsed2.papers:
+                        return parsed2
         except Exception as e:
-            print(f"[ArXivService] arXiv Atom search error: {e}")
+            print(f"[ArXivService] arXiv Atom search error: {repr(e)}")
         return None
 
     async def get_paper(self, arxiv_id: str) -> Optional[ArXivPaperItem]:

@@ -103,8 +103,6 @@ Most "Chat with a PDF" implementations are thin wrappers around a fixed vector s
 
 ## 📸 Screenshots & UI Tour
 
-> 📷 **Image Directory**: Save screenshots to [`docs/assets/screenshots/`](docs/assets/screenshots/) with the filenames below.
-
 <div align="center">
 
 ### 🧪 3-Pane Research Workspace & Architecture Engine
@@ -116,13 +114,9 @@ Most "Chat with a PDF" implementations are thin wrappers around a fixed vector s
 | :---: | :---: |
 | <img src="docs/assets/screenshots/02-discover-papers.png" alt="Discover and Ingest" width="100%" /><br/>*arXiv discovery with query tags & multi-paper basket* | <img src="docs/assets/screenshots/03-architecture-comparison.png" alt="5-Way Architecture Comparison" width="100%" /><br/>*Simultaneous query broadcast across 5 RAG architectures* |
 
-| 📊 Step 4: Automated Evaluation Suite | 💡 Step 5: Thematic Insights & Synthesis |
+| 📊 Step 4: Automated Evaluation Suite | 🎯 Evidence Inspector & PDF Grounding |
 | :---: | :---: |
-| <img src="docs/assets/screenshots/04-evaluation-suite.png" alt="Evaluation Suite" width="100%" /><br/>*RAG Triad metrics (Faithfulness, Relevance, Recall)* | <img src="docs/assets/screenshots/05-thematic-insights.png" alt="Thematic Insights" width="100%" /><br/>*Cross-corpus concept matrix, methods & timeline* |
-
-| 🎯 Evidence Inspector & PDF Grounding | 🤖 Agentic CRAG Self-Reflection Trace |
-| :---: | :---: |
-| <img src="docs/assets/screenshots/06-evidence-inspector.png" alt="Evidence Inspector" width="100%" /><br/>*Attention U-Curve, chunk scores & direct PDF anchor* | <img src="docs/assets/screenshots/07-agentic-trace.png" alt="Agentic CRAG Trace" width="100%" /><br/>*LangGraph query rewrite loops & confidence scoring* |
+| <img src="docs/assets/screenshots/04-evaluation-suite.png" alt="Evaluation Suite" width="100%" /><br/>*RAG Triad metrics (Faithfulness, Relevance, Recall)* | <img src="docs/assets/screenshots/06-evidence-inspector.png" alt="Evidence Inspector" width="100%" /><br/>*Attention U-Curve, chunk scores & direct PDF anchor* |
 
 </div>
 
@@ -386,6 +380,10 @@ flowchart LR
   - **Right**: **Evidence Inspector** drawer displaying retrieved chunks, similarity and BM25 scores, Attention U-Curve, and the **Open PDF** page anchor button.
 - Real-time Server-Sent Events (SSE) token streaming.
 
+<p align="center">
+  <img src="docs/assets/screenshots/06-evidence-inspector.png" alt="Evidence Inspector Grounding and Attention U-Curve" width="85%" />
+</p>
+
 ### Step 3: 5-Way Architecture Comparison (`ArchitectureComparisonView.tsx`)
 
 <p align="center">
@@ -410,10 +408,6 @@ flowchart LR
 - Interactive radar charts, latency distribution histograms, and cost-per-query breakdown.
 
 ### Step 5: Thematic Insights & Cross-Paper Synthesis (`InsightsView.tsx`)
-
-<p align="center">
-  <img src="docs/assets/screenshots/05-thematic-insights.png" alt="Step 5: Thematic Insights & Cross-Paper Synthesis" width="95%" />
-</p>
 
 - Automated cross-corpus synthesis aggregating concepts across all ingested papers:
   - **Theme Matrix**: High-level problem domains and research paradigms.
